@@ -1,0 +1,50 @@
+{
+  "manifest_version_major": 1,
+  "deployer_image": "fn61/infrastructureascode:20190107_1257_ec16791b",
+  "deploy_command": ["/work/deploy.sh"],
+  "download_artefacts": [
+    "lambdafunc.zip"
+  ],
+  "download_artefact_urltemplate": "https://dl.bintray.com/joonas/dl/weather2prometheus/{version}/{filename}",
+  "env_vars": [
+    {
+      "key": "TF_VAR_region",
+      "optional": false,
+      "placeholder": "us-east-1",
+      "help": "AWS region of your Lambda function"
+    },
+    {
+      "key": "TF_VAR_WEATHER_ZIPCODE",
+      "help": "ZIP code to fetch weather for"
+    },
+    {
+      "key": "TF_VAR_WEATHER_COUNTRYCODE",
+      "help": "Country code (two letters) to fetch weather for"
+    },
+    {
+      "key": "TF_VAR_OPENWEATHERMAP_APIKEY",
+      "help": "Your API key to OpenWeatherMap"
+    },
+    {
+      "key": "TF_VAR_PROMPIPE_ENDPOINT",
+      "placeholder": "https://prompipe.example.com/metrics/weather/lambda",
+      "help": "Endpoint URL to prompipe"
+    },
+    {
+      "key": "TF_VAR_PROMPIPE_AUTHTOKEN"
+    },
+    {
+      "key": "AWS_ACCESS_KEY_ID",
+      "optional": false,
+      "placeholder": "AKI..",
+      "help": ""
+    },
+    {
+      "key": "AWS_SECRET_ACCESS_KEY",
+      "optional": false,
+      "placeholder": "",
+      "help": ""
+    }
+  ],
+  "software_unique_id": "048fbf17-e20c-44b2-828b-3ce7f79a1338"
+}
