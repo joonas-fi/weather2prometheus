@@ -40,7 +40,7 @@ resource "aws_lambda_function" "fn" {
 resource "aws_cloudwatch_event_rule" "cw_scheduledevent_rule" {
 	name = "Weather-schedule"
 	description = "Scheduled invokation for Lambda fn"
-	schedule_expression = "rate(5 minute)"
+	schedule_expression = "rate(5 minutes)"
 }
 
 resource "aws_cloudwatch_event_target" "cwlambdatarget" {
