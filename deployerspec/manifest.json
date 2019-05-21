@@ -1,6 +1,6 @@
 {
   "manifest_version_major": 1,
-  "deployer_image": "fn61/infrastructureascode:20190107_1257_ec16791b",
+  "deployer_image": "fn61/infrastructureascode:20190521_1233_a7b52c5f",
   "deploy_command": ["/work/deploy.sh"],
   "download_artefacts": [
     "lambdafunc.zip"
