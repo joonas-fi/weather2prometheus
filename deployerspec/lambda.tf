@@ -13,7 +13,7 @@ provider "aws" {
 }
 
 resource "aws_lambda_function" "fn" {
-	function_name = "Weather-to-prompipe"
+	function_name = "Weather2Prometheus"
 	description = "Delivers weather reports to prompipe endpoint"
 
 	filename = "${var.zip_filename}"
@@ -21,8 +21,7 @@ resource "aws_lambda_function" "fn" {
 	handler = "weather"
 	runtime = "go1.x"
 
-	# FIXME
-	role = "arn:aws:iam::329074924855:role/AlertManager"
+	role = "${aws_iam_role.iam_lambda_role.arn}"
 
 	timeout = 30
 
@@ -39,7 +38,7 @@ resource "aws_lambda_function" "fn" {
 
 resource "aws_cloudwatch_event_rule" "cw_scheduledevent_rule" {
 	name = "Weather-schedule"
-	description = "Scheduled invokation for Lambda fn"
+	description = "Scheduled invocation for Lambda fn"
 	schedule_expression = "rate(5 minutes)"
 }
 
@@ -55,4 +54,24 @@ resource "aws_lambda_permission" "cloudwatch_scheduler" {
 	function_name = "${aws_lambda_function.fn.function_name}"
 	principal = "events.amazonaws.com"
 	source_arn = "${aws_cloudwatch_event_rule.cw_scheduledevent_rule.arn}"
+}
+
+resource "aws_iam_role" "iam_lambda_role" {
+  name = "Weather2Prometheus"
+
+  assume_role_policy = <<EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Action": "sts:AssumeRole",
+      "Principal": {
+        "Service": "lambda.amazonaws.com"
+      },
+      "Effect": "Allow",
+      "Sid": ""
+    }
+  ]
+}
+EOF
 }
