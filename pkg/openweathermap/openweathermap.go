@@ -8,6 +8,10 @@ import (
 	"time"
 )
 
+const (
+	DefaultTimeout = 10 * time.Second
+)
+
 type Observation struct {
 	Main struct {
 		Temperature      float64 `json:"temp"`     // [°C]
@@ -40,9 +44,6 @@ func (c *Client) GetWeather(ctx context.Context, countryCode string, zipCode str
 		zipCode,
 		countryCode,
 		c.apiKey)
-
-	ctx, cancel := context.WithTimeout(ctx, ezhttp.DefaultTimeout10s)
-	defer cancel()
 
 	result := &Observation{}
 	if _, err := ezhttp.Get(ctx, url, ezhttp.RespondsJson(result, true)); err != nil {

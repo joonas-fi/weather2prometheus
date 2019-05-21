@@ -24,7 +24,10 @@ func sendWeatherObservationToPrompipe() error {
 
 	owm := openweathermap.New(conf.OpenWeatherMapApiKey)
 
-	observation, err := owm.GetWeather(context.TODO(), conf.WeatherCountryCode, conf.WeatherZipCode)
+	ctx, cancel := context.WithTimeout(context.TODO(), openweathermap.DefaultTimeout)
+	defer cancel()
+
+	observation, err := owm.GetWeather(ctx, conf.WeatherCountryCode, conf.WeatherZipCode)
 	if err != nil {
 		return err
 	}
