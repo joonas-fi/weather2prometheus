@@ -5,7 +5,7 @@
 	"builders": [
 		{
 			"name": "default",
-			"uses": "docker://fn61/buildkit-golang:20190517_1314_f51ec433",
+			"uses": "docker://fn61/buildkit-golang:20200122_0942_d0899eff",
 			"mount_source": "",
 			"mount_destination": "/go/src/github.com/joonas-fi/weather2prometheus",
 			"workdir": "/go/src/github.com/joonas-fi/weather2prometheus",
