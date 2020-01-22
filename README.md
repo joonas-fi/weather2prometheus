@@ -8,7 +8,8 @@ Push weather data to Prometheus from AWS Lambda.
 NOTE: currently we're using [prompipe](https://github.com/function61/prompipe) to push
 the data, but ideally we'd use Prometheus' pull model.. it's just that the endpoint shouldn't
 be polled every 5s to stay within usage quotas.. and our Prometheus autodiscovery doesn't
-yet support modifying scrape intervals.
+yet support modifying scrape intervals .. and Prometheus's push gateway doesn't seem to
+support explicit timestamps.
 
 
 How to deploy

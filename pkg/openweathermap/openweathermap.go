@@ -50,6 +50,7 @@ func (c *Client) GetWeather(ctx context.Context, countryCode string, zipCode str
 		return nil, err
 	}
 
+	// HTTP code within JSON - brilliant 🙄
 	if result.Code != http.StatusOK {
 		return nil, fmt.Errorf("result code in JSON not OK; was %d", result.Code)
 	}
