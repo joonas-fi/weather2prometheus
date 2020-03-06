@@ -79,6 +79,7 @@ func newServerHandler() (http.Handler, error) {
 
 func pushObservationToPrometheusCollector(
 	observation openweathermap.Observation,
+	countryCode string,
 	zipCode string,
 	weatherMetrics *promconstmetrics.Collector,
 ) {
@@ -86,7 +87,7 @@ func pushObservationToPrometheusCollector(
 
 	push := func(key string, val float64) {
 		weatherMetrics.Observe(weatherMetrics.Register(key, "", prometheus.Labels{
-			"loc": zipCode,
+			"loc": fmt.Sprintf("%s/%s", countryCode, zipCode),
 		}), val, ts)
 	}
 
@@ -119,7 +120,11 @@ func weather2prometheus(
 		return nil, err
 	}
 
-	pushObservationToPrometheusCollector(*observation, conf.WeatherZipCode, weatherMetrics)
+	pushObservationToPrometheusCollector(
+		*observation,
+		conf.WeatherCountryCode,
+		conf.WeatherZipCode,
+		weatherMetrics)
 
 	return weatherMetricsReg, nil
 }
