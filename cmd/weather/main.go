@@ -13,6 +13,7 @@ import (
 	"github.com/function61/gokit/promconstmetrics"
 	"github.com/function61/gokit/taskrunner"
 	"github.com/function61/prompipe/pkg/prompipeclient"
+	"github.com/gorilla/mux"
 	"github.com/joonas-fi/weather2prometheus/pkg/openweathermap"
 	"github.com/prometheus/client_golang/prometheus"
 	"log"
@@ -25,9 +26,12 @@ const (
 )
 
 type Config struct {
-	WeatherZipCode       string
-	WeatherCountryCode   string
 	OpenWeatherMapApiKey string
+}
+
+type OpenWeatherMapLocation struct {
+	CountryCode string
+	ZipCode     string
 }
 
 func main() {
@@ -48,15 +52,17 @@ func main() {
 }
 
 func newServerHandler() (http.Handler, error) {
-	mux := http.NewServeMux()
-
 	conf, err := getConfig()
 	if err != nil {
 		return nil, err
 	}
 
-	mux.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
-		weatherMetricsReg, err := weather2prometheus(r.Context(), conf)
+	routes := mux.NewRouter()
+
+	routes.HandleFunc("/weather/{country}/{zip}/metrics", func(w http.ResponseWriter, r *http.Request) {
+		loc := OpenWeatherMapLocation{mux.Vars(r)["country"], mux.Vars(r)["zip"]}
+
+		weatherMetricsReg, err := weather2prometheus(r.Context(), loc, conf)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -74,7 +80,7 @@ func newServerHandler() (http.Handler, error) {
 		fmt.Fprintln(w, expositionOutput.String())
 	})
 
-	return mux, nil
+	return routes, nil
 }
 
 func pushObservationToPrometheusCollector(
@@ -100,6 +106,7 @@ func pushObservationToPrometheusCollector(
 
 func weather2prometheus(
 	ctx context.Context,
+	loc OpenWeatherMapLocation,
 	conf *Config,
 ) (*prometheus.Registry, error) {
 	openWeatherMap := openweathermap.New(conf.OpenWeatherMapApiKey)
@@ -108,7 +115,7 @@ func weather2prometheus(
 		ctx, cancel := context.WithTimeout(ctx, openweathermap.DefaultTimeout)
 		defer cancel()
 
-		return openWeatherMap.GetWeather(ctx, conf.WeatherCountryCode, conf.WeatherZipCode)
+		return openWeatherMap.GetWeather(ctx, loc.CountryCode, loc.ZipCode)
 	}()
 	if err != nil {
 		return nil, err
@@ -122,8 +129,8 @@ func weather2prometheus(
 
 	pushObservationToPrometheusCollector(
 		*observation,
-		conf.WeatherCountryCode,
-		conf.WeatherZipCode,
+		loc.CountryCode,
+		loc.ZipCode,
 		weatherMetrics)
 
 	return weatherMetricsReg, nil
@@ -141,8 +148,6 @@ func getConfig() (*Config, error) {
 	}
 
 	return &Config{
-		WeatherZipCode:       getRequiredEnv("WEATHER_ZIPCODE"),
-		WeatherCountryCode:   getRequiredEnv("WEATHER_COUNTRYCODE"),
 		OpenWeatherMapApiKey: getRequiredEnv("OPENWEATHERMAP_APIKEY"),
 	}, validationError
 }
