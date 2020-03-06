@@ -1,15 +1,9 @@
-[![Build Status](https://img.shields.io/travis/joonas-fi/weather2prometheus.svg?style=for-the-badge)](https://travis-ci.org/joonas-fi/weather2prometheus)
-[![Download](https://img.shields.io/badge/Download-bintray%20latest-blue.svg?style=for-the-badge)](https://bintray.com/joonas/dl/weather2prometheus/_latestVersion#files)
+![Build status](https://github.com/function61/weather2prometheus/workflows/Build/badge.svg)
+[![Download](https://img.shields.io/github/downloads/function61/weather2prometheus/total.svg?style=for-the-badge)](https://github.com/function61/weather2prometheus/releases)
 
-Push weather data to Prometheus from AWS Lambda.
+Get weather data in Prometheus from AWS Lambda.
 
 ![](docs/grafana.png)
-
-NOTE: currently we're using [prompipe](https://github.com/function61/prompipe) to push
-the data, but ideally we'd use Prometheus' pull model.. it's just that the endpoint shouldn't
-be polled every 5s to stay within usage quotas.. and our Prometheus autodiscovery doesn't
-yet support modifying scrape intervals .. and Prometheus's push gateway doesn't seem to
-support explicit timestamps.
 
 
 How to deploy
