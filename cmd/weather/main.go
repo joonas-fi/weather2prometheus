@@ -4,22 +4,77 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
+	"github.com/function61/gokit/aws/lambdautils"
 	"github.com/function61/gokit/envvar"
+	"github.com/function61/gokit/httputils"
+	"github.com/function61/gokit/logex"
+	"github.com/function61/gokit/ossignal"
 	"github.com/function61/gokit/promconstmetrics"
+	"github.com/function61/gokit/taskrunner"
 	"github.com/function61/prompipe/pkg/prompipeclient"
 	"github.com/joonas-fi/weather2prometheus/pkg/openweathermap"
 	"github.com/prometheus/client_golang/prometheus"
+	"log"
+	"net/http"
 	"os"
+)
+
+const (
+	promContentType = "text/plain; version=0.0.4; charset=utf-8"
 )
 
 type Config struct {
 	WeatherZipCode       string
 	WeatherCountryCode   string
 	OpenWeatherMapApiKey string
-	PromPipeEndpoint     string
-	PromPipeAuthToken    string
+}
+
+func main() {
+	handler, err := newServerHandler()
+	exitIfError(err)
+
+	if lambdautils.InLambda() {
+		lambda.StartHandler(lambdautils.NewLambdaHttpHandlerAdapter(handler))
+		return
+	}
+
+	logger := logex.StandardLogger()
+
+	exitIfError(runStandaloneServer(
+		ossignal.InterruptOrTerminateBackgroundCtx(logger),
+		handler,
+		logger))
+}
+
+func newServerHandler() (http.Handler, error) {
+	mux := http.NewServeMux()
+
+	conf, err := getConfig()
+	if err != nil {
+		return nil, err
+	}
+
+	mux.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
+		weatherMetricsReg, err := weather2prometheus(r.Context(), conf)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		expositionOutput := &bytes.Buffer{}
+
+		if err := prompipeclient.GatherToTextExport(weatherMetricsReg, expositionOutput); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", promContentType)
+
+		fmt.Fprintln(w, expositionOutput.String())
+	})
+
+	return mux, nil
 }
 
 func pushObservationToPrometheusCollector(
@@ -42,30 +97,10 @@ func pushObservationToPrometheusCollector(
 	push("weather_winddirection", float64(observation.Wind.Direction))
 }
 
-func pushToPromPipe(ctx context.Context, allMetrics *prometheus.Registry, conf Config) error {
-	return prompipeclient.New(conf.PromPipeEndpoint, conf.PromPipeAuthToken).Send(ctx, allMetrics)
-}
-
-func printMetrics(ctx context.Context, allMetrics *prometheus.Registry, conf Config) error {
-	expositionOutput := &bytes.Buffer{}
-
-	if err := prompipeclient.GatherToTextExport(allMetrics, expositionOutput); err != nil {
-		return err
-	}
-
-	_, err := fmt.Println(expositionOutput.String())
-	return err
-}
-
 func weather2prometheus(
 	ctx context.Context,
-	processor func(context.Context, *prometheus.Registry, Config) error,
-) error {
-	conf, err := getConfig()
-	if err != nil {
-		return err
-	}
-
+	conf *Config,
+) (*prometheus.Registry, error) {
 	openWeatherMap := openweathermap.New(conf.OpenWeatherMapApiKey)
 
 	observation, err := func() (*openweathermap.Observation, error) {
@@ -75,40 +110,24 @@ func weather2prometheus(
 		return openWeatherMap.GetWeather(ctx, conf.WeatherCountryCode, conf.WeatherZipCode)
 	}()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	weatherMetrics := promconstmetrics.NewCollector()
-	allMetrics := prometheus.NewRegistry()
-	if err := allMetrics.Register(weatherMetrics); err != nil {
-		return err
+	weatherMetricsReg := prometheus.NewRegistry()
+	if err := weatherMetricsReg.Register(weatherMetrics); err != nil {
+		return nil, err
 	}
 
 	pushObservationToPrometheusCollector(*observation, conf.WeatherZipCode, weatherMetrics)
 
-	return processor(ctx, allMetrics, *conf)
-}
-
-// this handler is driven by Cloudwatch scheduled event
-func lambdaHandler(ctx context.Context, req events.CloudWatchEvent) error {
-	return weather2prometheus(ctx, pushToPromPipe)
-}
-
-func main() {
-	if len(os.Args) == 2 && os.Args[1] == "dev" {
-		if err := weather2prometheus(context.Background(), printMetrics); err != nil {
-			panic(err)
-		}
-		return
-	}
-
-	lambda.Start(lambdaHandler)
+	return weatherMetricsReg, nil
 }
 
 func getConfig() (*Config, error) {
 	var validationError error
 	getRequiredEnv := func(key string) string {
-		val, err := envvar.Get(key)
+		val, err := envvar.Required(key)
 		if err != nil {
 			validationError = err
 		}
@@ -120,7 +139,29 @@ func getConfig() (*Config, error) {
 		WeatherZipCode:       getRequiredEnv("WEATHER_ZIPCODE"),
 		WeatherCountryCode:   getRequiredEnv("WEATHER_COUNTRYCODE"),
 		OpenWeatherMapApiKey: getRequiredEnv("OPENWEATHERMAP_APIKEY"),
-		PromPipeEndpoint:     getRequiredEnv("PROMPIPE_ENDPOINT"),
-		PromPipeAuthToken:    getRequiredEnv("PROMPIPE_AUTHTOKEN"),
 	}, validationError
+}
+
+func runStandaloneServer(ctx context.Context, handler http.Handler, logger *log.Logger) error {
+	srv := &http.Server{
+		Addr:    ":80",
+		Handler: handler,
+	}
+
+	tasks := taskrunner.New(ctx, logger)
+
+	tasks.Start("listener "+srv.Addr, func(_ context.Context, _ string) error {
+		return httputils.RemoveGracefulServerClosedError(srv.ListenAndServe())
+	})
+
+	tasks.Start("listenershutdowner", httputils.ServerShutdownTask(srv))
+
+	return tasks.Wait()
+}
+
+func exitIfError(err error) {
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 }
