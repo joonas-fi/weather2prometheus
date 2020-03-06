@@ -1,5 +1,5 @@
-![Build status](https://github.com/function61/weather2prometheus/workflows/Build/badge.svg)
-[![Download](https://img.shields.io/github/downloads/function61/weather2prometheus/total.svg?style=for-the-badge)](https://github.com/function61/weather2prometheus/releases)
+![Build status](https://github.com/joonas-fi/weather2prometheus/workflows/Build/badge.svg)
+[![Download](https://img.shields.io/github/downloads/joonas-fi/weather2prometheus/total.svg?style=for-the-badge)](https://github.com/joonas-fi/weather2prometheus/releases)
 
 Get weather data in Prometheus from AWS Lambda.
 
