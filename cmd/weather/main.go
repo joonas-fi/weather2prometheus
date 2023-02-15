@@ -156,8 +156,9 @@ func getConfig() (*Config, error) {
 
 func runStandaloneServer(ctx context.Context, handler http.Handler, logger *log.Logger) error {
 	srv := &http.Server{
-		Addr:    ":80",
-		Handler: handler,
+		Addr:              ":80",
+		Handler:           handler,
+		ReadHeaderTimeout: 60 * time.Second, // same as nginx
 	}
 
 	tasks := taskrunner.New(ctx, logger)
