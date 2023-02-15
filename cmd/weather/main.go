@@ -4,6 +4,11 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"log"
+	"net/http"
+	"os"
+	"time"
+
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/function61/gokit/aws/lambdautils"
 	"github.com/function61/gokit/envvar"
@@ -16,9 +21,6 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/joonas-fi/weather2prometheus/pkg/openweathermap"
 	"github.com/prometheus/client_golang/prometheus"
-	"log"
-	"net/http"
-	"os"
 )
 
 const (

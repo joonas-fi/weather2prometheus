@@ -3,9 +3,10 @@ package openweathermap
 import (
 	"context"
 	"fmt"
-	"github.com/function61/gokit/ezhttp"
 	"net/http"
 	"time"
+
+	"github.com/function61/gokit/ezhttp"
 )
 
 const (
