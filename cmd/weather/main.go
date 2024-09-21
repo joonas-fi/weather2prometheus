@@ -6,17 +6,14 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"os"
 	"time"
 
 	"github.com/aws/aws-lambda-go/lambda"
-	"github.com/function61/gokit/aws/lambdautils"
-	"github.com/function61/gokit/envvar"
-	"github.com/function61/gokit/httputils"
-	"github.com/function61/gokit/logex"
-	"github.com/function61/gokit/ossignal"
-	"github.com/function61/gokit/promconstmetrics"
-	"github.com/function61/gokit/taskrunner"
+	"github.com/function61/gokit/app/aws/lambdautils"
+	"github.com/function61/gokit/app/promconstmetrics"
+	"github.com/function61/gokit/log/logex"
+	"github.com/function61/gokit/net/http/httputils"
+	"github.com/function61/gokit/os/osutil"
 	"github.com/function61/prompipe/pkg/prompipeclient"
 	"github.com/gorilla/mux"
 	"github.com/joonas-fi/weather2prometheus/pkg/openweathermap"
@@ -38,7 +35,7 @@ type OpenWeatherMapLocation struct {
 
 func main() {
 	handler, err := newServerHandler()
-	exitIfError(err)
+	osutil.ExitIfError(err)
 
 	if lambdautils.InLambda() {
 		lambda.StartHandler(lambdautils.NewLambdaHttpHandlerAdapter(handler))
@@ -47,8 +44,8 @@ func main() {
 
 	logger := logex.StandardLogger()
 
-	exitIfError(runStandaloneServer(
-		ossignal.InterruptOrTerminateBackgroundCtx(logger),
+	osutil.ExitIfError(runStandaloneServer(
+		osutil.CancelOnInterruptOrTerminate(logger),
 		handler,
 		logger))
 }
@@ -141,7 +138,7 @@ func weather2prometheus(
 func getConfig() (*Config, error) {
 	var validationError error
 	getRequiredEnv := func(key string) string {
-		val, err := envvar.Required(key)
+		val, err := osutil.GetenvRequired(key)
 		if err != nil {
 			validationError = err
 		}
@@ -161,20 +158,5 @@ func runStandaloneServer(ctx context.Context, handler http.Handler, logger *log.
 		ReadHeaderTimeout: 60 * time.Second, // same as nginx
 	}
 
-	tasks := taskrunner.New(ctx, logger)
-
-	tasks.Start("listener "+srv.Addr, func(_ context.Context, _ string) error {
-		return httputils.RemoveGracefulServerClosedError(srv.ListenAndServe())
-	})
-
-	tasks.Start("listenershutdowner", httputils.ServerShutdownTask(srv))
-
-	return tasks.Wait()
-}
-
-func exitIfError(err error) {
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
+	return httputils.CancelableServer(ctx, srv, srv.ListenAndServe)
 }
