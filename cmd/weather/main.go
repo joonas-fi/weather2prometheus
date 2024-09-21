@@ -18,7 +18,6 @@ import (
 	"github.com/function61/gokit/promconstmetrics"
 	"github.com/function61/gokit/taskrunner"
 	"github.com/function61/prompipe/pkg/prompipeclient"
-	"github.com/gorilla/mux"
 	"github.com/joonas-fi/weather2prometheus/pkg/openweathermap"
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -59,10 +58,10 @@ func newServerHandler() (http.Handler, error) {
 		return nil, err
 	}
 
-	routes := mux.NewRouter()
+	routes := http.NewServeMux()
 
 	routes.HandleFunc("/weather/{country}/{zip}/metrics", func(w http.ResponseWriter, r *http.Request) {
-		loc := OpenWeatherMapLocation{mux.Vars(r)["country"], mux.Vars(r)["zip"]}
+		loc := OpenWeatherMapLocation{r.PathValue("country"), r.PathValue("zip")}
 
 		weatherMetricsReg, err := weather2prometheus(r.Context(), loc, conf)
 		if err != nil {
