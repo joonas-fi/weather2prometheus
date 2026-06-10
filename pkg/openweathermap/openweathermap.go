@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/function61/gokit/ezhttp"
+	"github.com/function61/gokit/net/http/ezhttp"
 )
 
 const (
@@ -47,7 +47,7 @@ func (c *Client) GetWeather(ctx context.Context, countryCode string, zipCode str
 		c.apiKey)
 
 	result := &Observation{}
-	if _, err := ezhttp.Get(ctx, url, ezhttp.RespondsJson(result, true)); err != nil {
+	if _, err := ezhttp.Get(ctx, url, ezhttp.RespondsJSONAllowUnknownFields(result)); err != nil {
 		return nil, err
 	}
 

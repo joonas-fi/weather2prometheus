@@ -2,24 +2,23 @@ package main
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
-	"time"
 
 	"github.com/aws/aws-lambda-go/lambda"
-	"github.com/function61/gokit/aws/lambdautils"
-	"github.com/function61/gokit/envvar"
-	"github.com/function61/gokit/httputils"
-	"github.com/function61/gokit/logex"
-	"github.com/function61/gokit/ossignal"
-	"github.com/function61/gokit/promconstmetrics"
-	"github.com/function61/gokit/taskrunner"
-	"github.com/function61/prompipe/pkg/prompipeclient"
+	"github.com/function61/gokit/app/aws/lambdautils"
+	"github.com/function61/gokit/app/cli"
+	"github.com/function61/gokit/app/promconstmetrics"
+	"github.com/function61/gokit/net/http/httputils"
+	"github.com/function61/gokit/os/osutil"
 	"github.com/joonas-fi/weather2prometheus/pkg/openweathermap"
+	"github.com/joonas-fi/weather2prometheus/pkg/prompipeclient"
+	"github.com/joonas-fi/weather2prometheus/pkg/weathermodel"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/spf13/cobra"
 )
 
 const (
@@ -27,7 +26,7 @@ const (
 )
 
 type Config struct {
-	OpenWeatherMapApiKey string
+	OpenWeatherMapAPIKey string
 }
 
 type OpenWeatherMapLocation struct {
@@ -37,19 +36,25 @@ type OpenWeatherMapLocation struct {
 
 func main() {
 	handler, err := newServerHandler()
-	exitIfError(err)
+	osutil.ExitIfError(err)
 
 	if lambdautils.InLambda() {
 		lambda.Start(lambdautils.NewLambdaHttpHandlerAdapter(handler))
 		return
 	}
 
-	logger := logex.StandardLogger()
+	cli.Execute(&cobra.Command{
+		Short: "Serve weather data",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			srv := &http.Server{
+				Addr:              cmp.Or(os.Getenv("PORT"), ":80"),
+				Handler:           handler,
+				ReadHeaderTimeout: httputils.DefaultReadHeaderTimeout,
+			}
 
-	exitIfError(runStandaloneServer(
-		ossignal.InterruptOrTerminateBackgroundCtx(logger),
-		handler,
-		logger))
+			return httputils.CancelableServer(cmd.Context(), srv, srv.ListenAndServe)
+		},
+	})
 }
 
 func newServerHandler() (http.Handler, error) {
@@ -58,12 +63,38 @@ func newServerHandler() (http.Handler, error) {
 		return nil, err
 	}
 
+	openWeatherMap := openweathermap.New(conf.OpenWeatherMapAPIKey)
+
 	routes := http.NewServeMux()
 
-	routes.HandleFunc("/weather/{country}/{zip}/metrics", func(w http.ResponseWriter, r *http.Request) {
+	routes.HandleFunc("/weather/api/{country}/{zip}", func(w http.ResponseWriter, r *http.Request) {
 		loc := OpenWeatherMapLocation{r.PathValue("country"), r.PathValue("zip")}
 
-		weatherMetricsReg, err := weather2prometheus(r.Context(), loc, conf)
+		observation, err := func() (*openweathermap.Observation, error) {
+			ctx, cancel := context.WithTimeout(r.Context(), openweathermap.DefaultTimeout)
+			defer cancel()
+
+			return openWeatherMap.GetWeather(ctx, loc.CountryCode, loc.ZipCode)
+		}()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		httputils.RespondJSON(w, weathermodel.Observation{
+			Timestamp:        observation.GetTimestamp(),
+			Temperature:      observation.Main.Temperature,
+			AirPressure:      observation.Main.AirPressure,
+			RelativeHumidity: observation.Main.RelativeHumidity,
+			Wind: weathermodel.WindSpec{
+				Speed:     observation.Wind.Speed,
+				Direction: observation.Wind.Direction,
+			},
+		})
+	})
+
+	metricsHandler := func(w http.ResponseWriter, r *http.Request, loc OpenWeatherMapLocation) {
+		weatherMetricsReg, err := weather2prometheus(r.Context(), loc, openWeatherMap)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -79,6 +110,14 @@ func newServerHandler() (http.Handler, error) {
 		w.Header().Set("Content-Type", promContentType)
 
 		fmt.Fprintln(w, expositionOutput.String())
+	}
+
+	routes.HandleFunc("/weather/api/{country}/{zip}/metrics", func(w http.ResponseWriter, r *http.Request) {
+		metricsHandler(w, r, OpenWeatherMapLocation{r.PathValue("country"), r.PathValue("zip")})
+	})
+
+	routes.HandleFunc("/weather/fi/{zip}/metrics", func(w http.ResponseWriter, r *http.Request) { // backwards compat
+		metricsHandler(w, r, OpenWeatherMapLocation{"fi", r.PathValue("zip")})
 	})
 
 	return routes, nil
@@ -105,13 +144,7 @@ func pushObservationToPrometheusCollector(
 	push("weather_winddirection", float64(observation.Wind.Direction))
 }
 
-func weather2prometheus(
-	ctx context.Context,
-	loc OpenWeatherMapLocation,
-	conf *Config,
-) (*prometheus.Registry, error) {
-	openWeatherMap := openweathermap.New(conf.OpenWeatherMapApiKey)
-
+func weather2prometheus(ctx context.Context, loc OpenWeatherMapLocation, openWeatherMap *openweathermap.Client) (*prometheus.Registry, error) {
 	observation, err := func() (*openweathermap.Observation, error) {
 		ctx, cancel := context.WithTimeout(ctx, openweathermap.DefaultTimeout)
 		defer cancel()
@@ -128,19 +161,15 @@ func weather2prometheus(
 		return nil, err
 	}
 
-	pushObservationToPrometheusCollector(
-		*observation,
-		loc.CountryCode,
-		loc.ZipCode,
-		weatherMetrics)
+	pushObservationToPrometheusCollector(*observation, loc.CountryCode, loc.ZipCode, weatherMetrics)
 
 	return weatherMetricsReg, nil
 }
 
 func getConfig() (*Config, error) {
 	var validationError error
-	getRequiredEnv := func(key string) string {
-		val, err := envvar.Required(key)
+	getenvRequired := func(key string) string {
+		val, err := osutil.GetenvRequired(key)
 		if err != nil {
 			validationError = err
 		}
@@ -149,31 +178,6 @@ func getConfig() (*Config, error) {
 	}
 
 	return &Config{
-		OpenWeatherMapApiKey: getRequiredEnv("OPENWEATHERMAP_APIKEY"),
+		OpenWeatherMapAPIKey: getenvRequired("OPENWEATHERMAP_APIKEY"),
 	}, validationError
-}
-
-func runStandaloneServer(ctx context.Context, handler http.Handler, logger *log.Logger) error {
-	srv := &http.Server{
-		Addr:              ":80",
-		Handler:           handler,
-		ReadHeaderTimeout: 60 * time.Second, // same as nginx
-	}
-
-	tasks := taskrunner.New(ctx, logger)
-
-	tasks.Start("listener "+srv.Addr, func(_ context.Context, _ string) error {
-		return httputils.RemoveGracefulServerClosedError(srv.ListenAndServe())
-	})
-
-	tasks.Start("listenershutdowner", httputils.ServerShutdownTask(srv))
-
-	return tasks.Wait()
-}
-
-func exitIfError(err error) {
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
 }

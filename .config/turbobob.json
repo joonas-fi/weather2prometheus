@@ -5,27 +5,15 @@
 	"builders": [
 		{
 			"name": "default",
-			"uses": "docker://fn61/buildkit-golang:20240913_1923_331687a0",
+			"uses": "docker://fn61/buildkit-golang:20251124_1405_720e0dc0",
 			"mount_source": "",
 			"mount_destination": "/workspace",
 			"workdir": "/workspace",
+		  "dev_http_ingress": "80",
 			"commands": {
 				"build": ["build-go-project.sh", "--directory=cmd/weather/", "--binary-basename=weather", "--aws-lambda-zip"],
 				"dev": ["bash"]
 			}
-		},
-		{
-			"name": "publisher",
-			"uses": "docker://fn61/buildkit-publisher:20200228_1755_83c203ff",
-			"mount_destination": "/workspace",
-			"commands": {
-				"publish": ["publish-gh.sh", "joonas-fi/weather2prometheus", "rel/"],
-				"dev": ["bash"]
-			},
-			"pass_envs": [
-				"GITHUB_TOKEN",
-				"EVENTHORIZON"
-			]
 		}
 	],
 	"os_arches": {
